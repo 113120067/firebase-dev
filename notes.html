@@ -1,0 +1,110 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>我的筆記</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Roboto, "Noto Sans CJK TC", Arial; padding: 20px; }
+    .note { border:1px solid #ddd; padding:10px; margin-bottom:10px; border-radius:6px; }
+    .note .actions { margin-top:8px; }
+    textarea { width:100%; height:100px; }
+    input[type="text"] { width:100%; padding:6px; }
+    button { padding:6px 10px; margin-right:6px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>我的筆記</h1>
+    <div><a href="index.html">回到受保護頁面</a></div>
+  </header>
+
+  <section id="new-note" style="margin-bottom:24px;">
+    <h2>新增筆記</h2>
+    <input id="note-title" placeholder="標題" />
+    <p><textarea id="note-content" placeholder="寫點什麼..."></textarea></p>
+    <button id="btn-create">新增</button>
+  </section>
+
+  <section>
+    <h2>筆記清單</h2>
+    <div id="notes-list">載入中…</div>
+  </section>
+
+  <script type="module">
+    import { onUserNotesChanged, createNote, updateNote, deleteNote } from './firebase-notes.js';
+    import { initialize, onAuthStateChanged } from './firebase-config.js';
+
+    await initialize();
+
+    const notesList = document.getElementById('notes-list');
+    const btnCreate = document.getElementById('btn-create');
+    const titleEl = document.getElementById('note-title');
+    const contentEl = document.getElementById('note-content');
+
+    function renderNotes(notes) {
+      notesList.innerHTML = '';
+      if (!notes || notes.length === 0) {
+        notesList.textContent = '目前沒有筆記';
+        return;
+      }
+      notes.forEach(n => {
+        const div = document.createElement('div');
+        div.className = 'note';
+        div.innerHTML = `\
+          <strong>${escapeHtml(n.title || '(無標題)')}</strong>\
+          <div style="white-space:pre-wrap;margin-top:6px;">${escapeHtml(n.content || '')}</div>\
+          <div class="actions">\
+            <button data-id="${n.id}" class="btn-edit">編輯</button>\
+            <button data-id="${n.id}" class="btn-delete">刪除</button>\
+          </div>`;
+        notesList.appendChild(div);
+      });
+      notesList.querySelectorAll('.btn-delete').forEach(b => {
+        b.addEventListener('click', async e => {
+          const id = e.target.dataset.id;
+          if (!confirm('確定要刪除這筆筆記？')) return;
+          await deleteNote(id);
+        });
+      });
+      notesList.querySelectorAll('.btn-edit').forEach(b => {
+        b.addEventListener('click', async e => {
+          const id = e.target.dataset.id;
+          const note = (window._lastNotes || []).find(x => x.id === id);
+          if (!note) return;
+          const newTitle = prompt('標題：', note.title || '');
+          if (newTitle === null) return;
+          const newContent = prompt('內容：', note.content || '');
+          if (newContent === null) return;
+          await updateNote(id, { title: newTitle, content: newContent });
+        });
+      });
+    }
+
+    btnCreate.addEventListener('click', async () => {
+      const t = titleEl.value.trim();
+      const c = contentEl.value.trim();
+      if (!t && !c) { alert('請輸入標題或內容'); return; }
+      await createNote(t, c);
+      titleEl.value = '';
+      contentEl.value = '';
+    });
+
+    onAuthStateChanged(async user => {
+      if (!user) {
+        location.href = 'login.html';
+        return;
+      }
+      const unsubscribe = await onUserNotesChanged(notes => {
+        window._lastNotes = notes;
+        renderNotes(notes);
+      });
+      // 當使用者登出，頁面會導向 login
+    });
+
+    function escapeHtml(s) {
+      return String(s || '').replace(/[&<>"']/g, (m) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+    }
+  </script>
+</body>
+</html>
