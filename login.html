@@ -33,4 +33,60 @@
         <button id="btn-signup" type="button">註冊</button>
       </div>
     </form>
-    <div id="msg" style="color:crimson; margin-top:8px;
+    <div id="msg" style="color:crimson; margin-top:8px;"></div>
+  </div>
+
+  <script type="module">
+    import { initialize, signInWithGoogle, signUp, signIn, onAuthStateChanged } from './firebase-config.js';
+
+    // 初始化（必須）
+    await initialize();
+
+    const btnGoogle = document.getElementById('btn-google');
+    const btnSignUp = document.getElementById('btn-signup');
+    const btnSignIn = document.getElementById('btn-signin');
+    const emailEl = document.getElementById('email');
+    const pwEl = document.getElementById('password');
+    const msg = document.getElementById('msg');
+
+    btnGoogle.addEventListener('click', async () => {
+      msg.textContent = '';
+      try {
+        await signInWithGoogle();
+        // 成功後 onAuthStateChanged 會觸發並重導到受保護頁面
+      } catch (err) {
+        console.error(err);
+        msg.textContent = err.message;
+      }
+    });
+
+    btnSignUp.addEventListener('click', async () => {
+      msg.textContent = '';
+      try {
+        await signUp(emailEl.value, pwEl.value);
+        // 成功後會自動登入
+      } catch (err) {
+        console.error(err);
+        msg.textContent = err.message;
+      }
+    });
+
+    btnSignIn.addEventListener('click', async () => {
+      msg.textContent = '';
+      try {
+        await signIn(emailEl.value, pwEl.value);
+      } catch (err) {
+        console.error(err);
+        msg.textContent = err.message;
+      }
+    });
+
+    // 如果使用者已登入，直接導向受保護頁面
+    onAuthStateChanged((user) => {
+      if (user) {
+        window.location.href = 'index.html';
+      }
+    });
+  </script>
+</body>
+</html>
