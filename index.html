@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>受保護頁面 — 範例</title>
+  <style>
+    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans CJK TC", "Helvetica Neue", Arial; padding: 20px; }
+    .hidden { display:none; }
+    header { display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; }
+    .card { border:1px solid #ddd; padding:20px; border-radius:8px; max-width:800px; }
+    button { padding:8px 12px; border-radius:6px; border:1px solid #bbb; background:#f6f6f6; cursor:pointer; }
+    pre { background:#f5f5f5; padding:12px; border-radius:6px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>受保護內容（只有登入後可見）</h1>
+    <div>
+      <span id="user-email"></span>
+      <button id="btn-logout">登出</button>
+    </div>
+  </header>
+
+  <main>
+    <div id="loading" class="card">正在檢查登入狀態…</div>
+
+    <div id="protected" class="card hidden">
+      <h2>歡迎！你已登入</h2>
+      <p>這裡是只有登入後才能看到的頁面內容。</p>
+      <p>範例功能：使用 Firebase Authentication 驗證。</p>
+      <button id="btn-fetch-protected">取得受保護伺服器資料</button>
+      <pre id="protected-output"></pre>
+    </div>
+
+    <div id="not-auth" class="card hidden">
+      <h2>你尚未登入</h2>
+      <p>請先登入，或前往 <a href="login.html">登入頁面</a>。</p>
+    </div>
+  </main>
+
+  <script type="module">
+    import { initialize, onAuthStateChanged, logout, getAuthToken } from './firebase-config.js';
+
+    // 初始化（從 /config 取得 firebase 設定）
+    await initialize();
+
+    const loading = document.getElementById('loading');
+    const protectedEl = document.getElementById('protected');
+    const notAuth = document.getElementById('not-auth');
+    const userEmail = document.getElementById('user-email');
+    const btnLogout = document.getElementById('btn-logout');
+    const btnFetch = document.getElementById('btn-fetch-protected');
+    const out = document.getElementById('protected-output');
+
+    btnLogout.addEventListener('click', async () => {
+      await logout();
+      // 登出後 onAuthStateChanged 會觸發 -> 重導到 login 頁面 below
+    });
+
+    btnFetch.addEventListener('click', async () => {
+      try {
+        const token = await getAuthToken();
+        if (!token) {
+          out.textContent = 'No auth token (not signed in)';
+          return;
+        }
+        const resp = await fetch('/protected-data', { headers: { 'Authorization': 'Bearer ' + token } });
+        if (!resp.ok) {
+          out.textContent = 'Error: ' + (await resp.text());
+          return;
+        }
+        const data = await resp.json();
+        out.textContent = JSON.stringify(data, null, 2);
+      } catch (err) {
+        out.textContent = String(err);
+      }
+    });
+
+    onAuthStateChanged((user) => {
+      loading.classList.add('hidden');
+      if (user) {
+        userEmail.textContent = user.email ?? user.displayName ?? '已登入使用者';
+        protectedEl.classList.remove('hidden');
+        notAuth.classList.add('hidden');
+      } else {
+        // 轉到登入頁面
+        window.location.href = 'login.html';
+      }
+    });
+  </script>
+</body>
+</html>

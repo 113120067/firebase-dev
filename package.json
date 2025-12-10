@@ -1,0 +1,27 @@
+{
+  "name": "firebase-dev",
+  "version": "1.0.0",
+  "description": "Firebase Auth sample - static frontend site (env-based Firebase config + Admin SDK verification)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "npx http-server ./ -p 8080 -c-1"
+  },
+  "keywords": [
+    "firebase",
+    "auth",
+    "static",
+    "frontend",
+    "admin"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^16.0.3",
+    "express": "^4.18.2",
+    "firebase-admin": "^11.11.0"
+  },
+  "engines": {
+    "node": ">=14"
+  }
+}
