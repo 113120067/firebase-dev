@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>學生詳情 - Classroom MVP</title>
+  <link rel="stylesheet" href="/public/css/classroom.css">
+</head>
+<body>
+  <div class="container">
+    <h1>學生詳情</h1>
+    
+    <!-- 學生基本資訊 -->
+    <div class="card">
+      <h2 id="studentName">載入中...</h2>
+      <p><strong>加入時間：</strong><span id="joinedAt">-</span></p>
+      <p><strong>總學習時間：</strong><span id="totalTime">0 分 0 秒</span></p>
+      <p><strong>學習次數：</strong><span id="totalSessions">0</span> 次</p>
+      <p><strong>最後活躍：</strong><span id="lastActive">-</span></p>
+    </div>
+
+    <!-- 單字正確率統計 -->
+    <div class="card">
+      <h2>📊 單字正確率</h2>
+      <table class="word-stats-table" id="wordStatsTable">
+        <thead>
+          <tr>
+            <th>單字</th>
+            <th>正確</th>
+            <th>錯誤</th>
+            <th>正確率</th>
+          </tr>
+        </thead>
+        <tbody id="wordStatsBody">
+          <tr>
+            <td colspan="4" class="text-center" style="color: #5f6368;">載入中...</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- 學習記錄 -->
+    <div class="card">
+      <h2>📝 學習記錄</h2>
+      <table class="sessions-table" id="sessionsTable">
+        <thead>
+          <tr>
+            <th>日期時間</th>
+            <th>時長</th>
+            <th>練習次數</th>
+            <th>正確率</th>
+          </tr>
+        </thead>
+        <tbody id="sessionsBody">
+          <tr>
+            <td colspan="4" class="text-center" style="color: #5f6368;">載入中...</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="mt-20">
+      <button onclick="history.back()" class="btn btn-secondary">返回</button>
+    </div>
+  </div>
+
+  <script type="module">
+    import { initialize, onAuthStateChanged } from '/firebase-config.js';
+    import { getStudentDetail } from '/firebase-classroom.js';
+    import { 
+      showLoading, 
+      hideLoading, 
+      showError, 
+      formatTime,
+      formatDateTime,
+      formatAccuracy,
+      getAccuracyClass,
+      calculateAccuracy,
+      getUrlParam 
+    } from '/public/js/classroom-utils.js';
+
+    let currentUser = null;
+    let studentId = null;
+
+    // 初始化
+    async function init() {
+      try {
+        await initialize();
+        
+        onAuthStateChanged(async user => {
+          if (user) {
+            currentUser = user;
+            await loadStudentDetail();
+          } else {
+            alert('請先登入');
+            window.location.href = '/login.html';
+          }
+        });
+      } catch (error) {
+        console.error('Initialization error:', error);
+        showError('系統初始化失敗：' + error.message);
+      }
+    }
+
+    // 載入學生詳情
+    async function loadStudentDetail() {
+      studentId = getUrlParam('studentId');
+      
+      if (!studentId) {
+        showError('缺少學生 ID');
+        return;
+      }
+
+      try {
+        showLoading();
+        
+        const studentDetail = await getStudentDetail(studentId);
+        
+        if (!studentDetail) {
+          hideLoading();
+          showError('找不到此學生');
+          return;
+        }
+
+        // 顯示基本資訊
+        document.getElementById('studentName').textContent = studentDetail.studentName;
+        document.getElementById('joinedAt').textContent = formatDateTime(studentDetail.joinedAt);
+        document.getElementById('totalTime').textContent = formatTime(studentDetail.totalTime);
+        document.getElementById('totalSessions').textContent = studentDetail.totalSessions || 0;
+        document.getElementById('lastActive').textContent = formatDateTime(studentDetail.lastActive);
+
+        // 顯示單字統計
+        displayWordStats(studentDetail.wordStats, studentDetail.words);
+
+        // 顯示學習記錄
+        displaySessions(studentDetail.sessions);
+
+        hideLoading();
+
+      } catch (error) {
+        hideLoading();
+        console.error('Error loading student detail:', error);
+        showError('載入學生資料失敗：' + error.message);
+      }
+    }
+
+    // 顯示單字統計
+    function displayWordStats(wordStats, words) {
+      const tbody = document.getElementById('wordStatsBody');
+      
+      if (!wordStats || Object.keys(wordStats).length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" class="text-center" style="color: #5f6368;">尚無練習記錄</td></tr>';
+        return;
+      }
+
+      const rows = Object.entries(wordStats).map(([word, stats]) => {
+        const correct = stats.correct || 0;
+        const wrong = stats.wrong || 0;
+        const total = correct + wrong;
+        const accuracy = calculateAccuracy(correct, total);
+        const accuracyClass = getAccuracyClass(accuracy);
+
+        return `
+          <tr>
+            <td>${word}</td>
+            <td>${correct}</td>
+            <td>${wrong}</td>
+            <td class="${accuracyClass}">${formatAccuracy(accuracy)}</td>
+          </tr>
+        `;
+      }).join('');
+
+      tbody.innerHTML = rows;
+    }
+
+    // 顯示學習記錄
+    function displaySessions(sessions) {
+      const tbody = document.getElementById('sessionsBody');
+      
+      if (!sessions || sessions.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" class="text-center" style="color: #5f6368;">尚無學習記錄</td></tr>';
+        return;
+      }
+
+      const rows = sessions.map(session => {
+        const accuracy = session.accuracy || 0;
+        const accuracyClass = getAccuracyClass(accuracy);
+
+        return `
+          <tr>
+            <td>${formatDateTime(session.startTime)}</td>
+            <td>${formatTime(session.duration)}</td>
+            <td>${session.practiceCount || 0}</td>
+            <td class="${accuracyClass}">${formatAccuracy(accuracy)}</td>
+          </tr>
+        `;
+      }).join('');
+
+      tbody.innerHTML = rows;
+    }
+
+    // 初始化
+    init();
+  </script>
+</body>
+</html>

@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>建立課堂 - Classroom MVP</title>
+  <link rel="stylesheet" href="/public/css/classroom.css">
+</head>
+<body>
+  <div class="container">
+    <h1>建立新課堂</h1>
+    
+    <div class="card">
+      <form id="createForm" enctype="multipart/form-data">
+        <div>
+          <label for="classroomName">課堂名稱</label>
+          <input type="text" id="classroomName" name="classroomName" placeholder="例如：高一英文 A 班" required>
+        </div>
+        
+        <div>
+          <label for="file">單字檔案（.txt，每行一個單字）</label>
+          <input type="file" id="file" name="file" accept=".txt" required>
+        </div>
+        
+        <button type="submit" id="submitBtn">建立課堂</button>
+      </form>
+    </div>
+    
+    <div id="result" class="hidden">
+      <div class="card text-center">
+        <h2>✅ 課堂建立成功！</h2>
+        <p class="mb-20">請將此代碼分享給學生</p>
+        <div class="code-display" id="classroomCode">----</div>
+        <p class="info-message">學生可以使用此代碼加入課堂</p>
+        <div class="mt-20">
+          <a href="#" id="teacherDashboardLink" class="btn btn-primary">前往教師控制台</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { initialize, onAuthStateChanged } from '/firebase-config.js';
+    import { createClassroom } from '/firebase-classroom.js';
+    import { showLoading, hideLoading, showError, showSuccess } from '/public/js/classroom-utils.js';
+
+    let currentUser = null;
+
+    // 初始化並檢查登入狀態
+    async function init() {
+      try {
+        await initialize();
+        
+        onAuthStateChanged(user => {
+          if (user) {
+            currentUser = user;
+            console.log('User logged in:', user.uid);
+          } else {
+            // 未登入，重導向到登入頁面
+            alert('請先登入');
+            window.location.href = '/login.html';
+          }
+        });
+      } catch (error) {
+        console.error('Initialization error:', error);
+        showError('系統初始化失敗：' + error.message);
+      }
+    }
+
+    // 處理表單提交
+    document.getElementById('createForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      if (!currentUser) {
+        showError('請先登入');
+        return;
+      }
+
+      const formData = new FormData(e.target);
+      const classroomName = formData.get('classroomName');
+      const file = formData.get('file');
+
+      if (!file || file.size === 0) {
+        showError('請選擇單字檔案');
+        return;
+      }
+
+      // 檢查檔案大小（最大 1MB）
+      if (file.size > 1024 * 1024) {
+        showError('檔案大小不得超過 1MB');
+        return;
+      }
+
+      try {
+        showLoading();
+        
+        // 上傳檔案到伺服器並解析
+        const response = await fetch('/api/classroom/create', {
+          method: 'POST',
+          body: formData
+        });
+
+        const data = await response.json();
+        
+        if (!response.ok) {
+          throw new Error(data.error || '建立課堂失敗');
+        }
+
+        // 使用伺服器解析的單字在 Firestore 建立課堂
+        const result = await createClassroom(
+          currentUser.uid,
+          data.classroomName,
+          data.words
+        );
+
+        hideLoading();
+        showSuccess('課堂建立成功！');
+
+        // 顯示結果
+        document.getElementById('createForm').classList.add('hidden');
+        document.getElementById('result').classList.remove('hidden');
+        document.getElementById('classroomCode').textContent = result.code;
+        document.getElementById('teacherDashboardLink').href = `/classroom-teacher.html?id=${result.classroomId}`;
+
+      } catch (error) {
+        hideLoading();
+        console.error('Error creating classroom:', error);
+        showError(error.message || '建立課堂失敗，請稍後再試');
+      }
+    });
+
+    // 初始化
+    init();
+  </script>
+</body>
+</html>
