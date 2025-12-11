@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>加入課堂 - Classroom MVP</title>
+  <link rel="stylesheet" href="/public/css/classroom.css">
+</head>
+<body>
+  <div class="container">
+    <div class="card text-center">
+      <h1>加入課堂</h1>
+      <p style="color: #5f6368; margin-bottom: 30px;">請輸入教師提供的課堂代碼</p>
+      
+      <form id="joinForm">
+        <div>
+          <input 
+            type="text" 
+            id="classroomCode" 
+            name="classroomCode" 
+            placeholder="課堂代碼（如：AB12）" 
+            maxlength="4" 
+            required
+            style="text-transform: uppercase; text-align: center; font-size: 1.5rem; letter-spacing: 4px;"
+          >
+        </div>
+        
+        <div>
+          <input 
+            type="text" 
+            id="studentName" 
+            name="studentName" 
+            placeholder="你的姓名" 
+            required
+            style="text-align: center;"
+          >
+        </div>
+        
+        <button type="submit" id="joinBtn">加入課堂</button>
+      </form>
+    </div>
+  </div>
+
+  <script type="module">
+    import { initialize } from '/firebase-config.js';
+    import { getClassroomByCode, addStudent } from '/firebase-classroom.js';
+    import { showLoading, hideLoading, showError, showSuccess } from '/public/js/classroom-utils.js';
+
+    // 初始化
+    async function init() {
+      try {
+        await initialize();
+      } catch (error) {
+        console.error('Initialization error:', error);
+        showError('系統初始化失敗：' + error.message);
+      }
+    }
+
+    // 自動轉大寫
+    document.getElementById('classroomCode').addEventListener('input', (e) => {
+      e.target.value = e.target.value.toUpperCase();
+    });
+
+    // 處理表單提交
+    document.getElementById('joinForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      const code = document.getElementById('classroomCode').value.trim().toUpperCase();
+      const studentName = document.getElementById('studentName').value.trim();
+
+      if (code.length !== 4) {
+        showError('課堂代碼必須是 4 位英數字');
+        return;
+      }
+
+      if (!studentName) {
+        showError('請輸入你的姓名');
+        return;
+      }
+
+      try {
+        showLoading();
+        
+        // 驗證代碼是否存在
+        const classroom = await getClassroomByCode(code);
+        
+        if (!classroom) {
+          hideLoading();
+          showError('找不到此課堂代碼，請確認後再試');
+          return;
+        }
+
+        // 加入課堂
+        const studentId = await addStudent(classroom.id, studentName);
+        
+        hideLoading();
+        showSuccess('成功加入課堂！');
+
+        // 跳轉到學生學習頁面
+        setTimeout(() => {
+          window.location.href = `/classroom-student.html?studentId=${studentId}&classroomId=${classroom.id}`;
+        }, 1000);
+
+      } catch (error) {
+        hideLoading();
+        console.error('Error joining classroom:', error);
+        showError('加入課堂失敗：' + error.message);
+      }
+    });
+
+    // 初始化
+    init();
+  </script>
+</body>
+</html>

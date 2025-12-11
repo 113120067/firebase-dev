@@ -1,12 +1,35 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    
+    // 保留原有 notes 規則
     match /notes/{noteId} {
       allow create: if request.auth != null
         && request.resource.data.owner == request.auth.uid
         && request.resource.data.keys().hasAll(['owner','title','content','createdAt','updatedAt']);
       allow read, update, delete: if request.auth != null
         && resource.data.owner == request.auth.uid;
+    }
+    
+    // 課堂規則
+    match /classrooms/{classroomId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+        && request.resource.data.teacherId == request.auth.uid;
+      allow update, delete: if request.auth != null
+        && resource.data.teacherId == request.auth.uid;
+    }
+    
+    // 學生規則
+    match /students/{studentId} {
+      allow read: if request.auth != null;
+      allow create, update: if request.auth != null;
+    }
+    
+    // 學習記錄規則
+    match /learning_sessions/{sessionId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
     }
   }
 }

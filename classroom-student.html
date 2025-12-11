@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>學習中 - Classroom MVP</title>
+  <link rel="stylesheet" href="/public/css/classroom.css">
+</head>
+<body>
+  <div class="container">
+    <!-- 課堂資訊 -->
+    <div class="card text-center">
+      <h1>📚 <span id="classroomName">載入中...</span></h1>
+      <p style="font-size: 1.2rem;">Hi, <span id="studentName">載入中...</span>！</p>
+    </div>
+
+    <!-- 學習計時器 -->
+    <div class="card learning-panel">
+      <h2>⏱️ 我的學習時間</h2>
+      <div class="timer-display" id="timerDisplay">0 分 0 秒</div>
+      <div class="control-buttons">
+        <button id="startBtn" class="btn btn-success">開始學習</button>
+        <button id="endBtn" class="btn btn-danger" style="display: none;">結束學習</button>
+      </div>
+    </div>
+
+    <!-- 單字練習區 -->
+    <div id="practiceSection" class="hidden">
+      <div class="card">
+        <h2>📝 單字練習</h2>
+        <div class="word-card">
+          <div class="word-display" id="currentWord">---</div>
+          <div class="word-actions">
+            <button id="knowBtn" class="btn btn-success" style="font-size: 1.2rem; padding: 15px 30px;">✓ 知道</button>
+            <button id="dontKnowBtn" class="btn btn-danger" style="font-size: 1.2rem; padding: 15px 30px;">✗ 不知道</button>
+          </div>
+          <div class="progress-display">
+            進度：<span id="currentIndex">0</span> / <span id="totalWords">0</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 我的排名 -->
+    <div class="card">
+      <h2>🏅 我的排名</h2>
+      <p class="text-center" style="font-size: 1.3rem;">
+        第 <span id="myRank" style="color: #1a73e8; font-weight: bold;">-</span> 名 / 共 <span id="totalStudents">0</span> 人
+      </p>
+      <p class="text-center" style="color: #5f6368;">
+        總學習時間：<span id="myTotalTime">0 分 0 秒</span>
+      </p>
+    </div>
+
+    <!-- 排行榜 Top 5 -->
+    <div class="card">
+      <h2>🏆 排行榜 Top 5</h2>
+      <div id="leaderboardTop5">
+        <p class="text-center" style="color: #5f6368;">載入中...</p>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { initialize } from '/firebase-config.js';
+    import { 
+      getClassroom, 
+      getStudentDetail,
+      startLearningSession,
+      endLearningSession,
+      recordPractice,
+      getLeaderboard
+    } from '/firebase-classroom.js';
+    import { 
+      showLoading, 
+      hideLoading, 
+      showError, 
+      showSuccess,
+      formatTime,
+      getUrlParam,
+      shuffleArray
+    } from '/public/js/classroom-utils.js';
+
+    let studentId = null;
+    let classroomId = null;
+    let classroom = null;
+    let student = null;
+    let sessionId = null;
+    let isLearning = false;
+    let startTime = null;
+    let timerInterval = null;
+    let currentWordIndex = 0;
+    let words = [];
+    let practiceCount = 0;
+    let correctCount = 0;
+
+    // 初始化
+    async function init() {
+      try {
+        await initialize();
+        
+        studentId = getUrlParam('studentId');
+        classroomId = getUrlParam('classroomId');
+
+        if (!studentId || !classroomId) {
+          showError('缺少必要參數');
+          return;
+        }
+
+        await loadData();
+      } catch (error) {
+        console.error('Initialization error:', error);
+        showError('系統初始化失敗：' + error.message);
+      }
+    }
+
+    // 載入資料
+    async function loadData() {
+      try {
+        showLoading();
+
+        // 載入課堂資料
+        classroom = await getClassroom(classroomId);
+        if (!classroom) {
+          hideLoading();
+          showError('找不到課堂');
+          return;
+        }
+
+        // 載入學生資料
+        student = await getStudentDetail(studentId);
+        if (!student) {
+          hideLoading();
+          showError('找不到學生資料');
+          return;
+        }
+
+        // 顯示資訊
+        document.getElementById('classroomName').textContent = classroom.name;
+        document.getElementById('studentName').textContent = student.studentName;
+        document.getElementById('myTotalTime').textContent = formatTime(student.totalTime);
+
+        // 載入排行榜
+        await updateLeaderboard();
+
+        hideLoading();
+      } catch (error) {
+        hideLoading();
+        console.error('Error loading data:', error);
+        showError('載入資料失敗：' + error.message);
+      }
+    }
+
+    // 更新排行榜
+    async function updateLeaderboard() {
+      try {
+        const leaderboard = await getLeaderboard(classroomId);
+        
+        // 找出自己的排名
+        const myRank = leaderboard.findIndex(s => s.id === studentId) + 1;
+        document.getElementById('myRank').textContent = myRank > 0 ? myRank : '-';
+        document.getElementById('totalStudents').textContent = leaderboard.length;
+
+        // 顯示 Top 5
+        const top5 = leaderboard.slice(0, 5);
+        const top5HTML = top5.map((s, index) => {
+          const rank = index + 1;
+          const isMe = s.id === studentId;
+          const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : '';
+          
+          return `
+            <div class="${rank <= 3 ? 'leaderboard-item rank-' + rank : 'leaderboard-item'}">
+              <span class="rank">${rank}.</span>
+              <span class="student-name">${s.studentName}${isMe ? ' (我)' : ''}</span>
+              <span class="student-time">${formatTime(s.totalTime)}</span>
+              ${medal ? `<span class="medal">${medal}</span>` : ''}
+            </div>
+          `;
+        }).join('');
+
+        document.getElementById('leaderboardTop5').innerHTML = top5HTML;
+
+      } catch (error) {
+        console.error('Error updating leaderboard:', error);
+      }
+    }
+
+    // 開始學習
+    async function startLearning() {
+      try {
+        showLoading();
+
+        // 建立學習階段
+        sessionId = await startLearningSession(studentId, classroomId);
+        
+        isLearning = true;
+        startTime = Date.now();
+        
+        // 打亂單字順序
+        words = shuffleArray(classroom.words);
+        currentWordIndex = 0;
+        practiceCount = 0;
+        correctCount = 0;
+
+        // 開始計時
+        startTimer();
+
+        // 顯示練習區
+        document.getElementById('practiceSection').classList.remove('hidden');
+        document.getElementById('startBtn').style.display = 'none';
+        document.getElementById('endBtn').style.display = 'inline-block';
+
+        // 顯示第一個單字
+        showNextWord();
+
+        hideLoading();
+        showSuccess('開始學習！');
+
+      } catch (error) {
+        hideLoading();
+        console.error('Error starting learning:', error);
+        showError('開始學習失敗：' + error.message);
+      }
+    }
+
+    // 結束學習
+    async function finishLearning() {
+      if (!isLearning) return;
+
+      try {
+        showLoading();
+
+        // 停止計時
+        stopTimer();
+
+        const duration = Math.floor((Date.now() - startTime) / 1000);
+
+        // 儲存學習記錄
+        await endLearningSession(sessionId, {
+          duration,
+          practiceCount,
+          correctCount
+        });
+
+        isLearning = false;
+        sessionId = null;
+
+        // 隱藏練習區
+        document.getElementById('practiceSection').classList.add('hidden');
+        document.getElementById('startBtn').style.display = 'inline-block';
+        document.getElementById('endBtn').style.display = 'none';
+
+        // 重新載入資料
+        await loadData();
+
+        hideLoading();
+        showSuccess('學習記錄已儲存！');
+
+      } catch (error) {
+        hideLoading();
+        console.error('Error ending learning:', error);
+        showError('結束學習失敗：' + error.message);
+      }
+    }
+
+    // 計時器
+    function startTimer() {
+      timerInterval = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - startTime) / 1000);
+        document.getElementById('timerDisplay').textContent = formatTime(elapsed);
+      }, 1000);
+    }
+
+    function stopTimer() {
+      if (timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+      }
+    }
+
+    // 顯示下一個單字
+    function showNextWord() {
+      if (currentWordIndex >= words.length) {
+        // 已練習完所有單字
+        alert('已練習完所有單字！');
+        currentWordIndex = 0; // 重新開始
+      }
+
+      const word = words[currentWordIndex];
+      document.getElementById('currentWord').textContent = word;
+      document.getElementById('currentIndex').textContent = currentWordIndex + 1;
+      document.getElementById('totalWords').textContent = words.length;
+    }
+
+    // 處理「知道」按鈕
+    async function handleKnow() {
+      if (!isLearning) return;
+
+      const word = words[currentWordIndex];
+      practiceCount++;
+      correctCount++;
+
+      try {
+        await recordPractice(studentId, word, true);
+        currentWordIndex++;
+        showNextWord();
+      } catch (error) {
+        console.error('Error recording practice:', error);
+        showError('記錄練習失敗');
+      }
+    }
+
+    // 處理「不知道」按鈕
+    async function handleDontKnow() {
+      if (!isLearning) return;
+
+      const word = words[currentWordIndex];
+      practiceCount++;
+
+      try {
+        await recordPractice(studentId, word, false);
+        currentWordIndex++;
+        showNextWord();
+      } catch (error) {
+        console.error('Error recording practice:', error);
+        showError('記錄練習失敗');
+      }
+    }
+
+    // 事件監聽
+    document.getElementById('startBtn').addEventListener('click', startLearning);
+    document.getElementById('endBtn').addEventListener('click', finishLearning);
+    document.getElementById('knowBtn').addEventListener('click', handleKnow);
+    document.getElementById('dontKnowBtn').addEventListener('click', handleDontKnow);
+
+    // 初始化
+    init();
+  </script>
+</body>
+</html>

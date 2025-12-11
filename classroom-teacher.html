@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>教師控制台 - Classroom MVP</title>
+  <link rel="stylesheet" href="/public/css/classroom.css">
+</head>
+<body>
+  <div class="wide-container">
+    <h1>📚 教師控制台</h1>
+    
+    <!-- 課堂資訊 -->
+    <div class="card">
+      <h2 id="classroomName">載入中...</h2>
+      <p><strong>課堂代碼：</strong><span id="classroomCode" style="font-size: 1.5rem; color: #1a73e8; font-weight: bold;">----</span></p>
+      <p><strong>單字數量：</strong><span id="wordCount">0</span> 個</p>
+    </div>
+
+    <!-- 統計資訊 -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <span class="stat-value" id="avgTime">0 分</span>
+        <span class="stat-label">平均學習時間</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value" id="maxTime">0 分</span>
+        <span class="stat-label">最高學習時間</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value" id="activeStudents">0</span>
+        <span class="stat-label">活躍學生數</span>
+      </div>
+    </div>
+
+    <!-- 即時排行榜 -->
+    <div class="card">
+      <h2>🏆 即時排行榜</h2>
+      <div id="leaderboardContainer">
+        <p class="text-center" style="color: #5f6368;">尚無學生加入課堂</p>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { initialize, onAuthStateChanged } from '/firebase-config.js';
+    import { getClassroom, onClassroomStudentsChanged } from '/firebase-classroom.js';
+    import { showLoading, hideLoading, showError, formatTime, getUrlParam } from '/public/js/classroom-utils.js';
+
+    let currentUser = null;
+    let classroomId = null;
+    let unsubscribeStudents = null;
+
+    // 初始化
+    async function init() {
+      try {
+        await initialize();
+        
+        onAuthStateChanged(async user => {
+          if (user) {
+            currentUser = user;
+            await loadClassroom();
+          } else {
+            alert('請先登入');
+            window.location.href = '/login.html';
+          }
+        });
+      } catch (error) {
+        console.error('Initialization error:', error);
+        showError('系統初始化失敗：' + error.message);
+      }
+    }
+
+    // 載入課堂資料
+    async function loadClassroom() {
+      classroomId = getUrlParam('id');
+      
+      if (!classroomId) {
+        showError('缺少課堂 ID');
+        return;
+      }
+
+      try {
+        showLoading();
+        
+        const classroom = await getClassroom(classroomId);
+        
+        if (!classroom) {
+          hideLoading();
+          showError('找不到此課堂');
+          return;
+        }
+
+        // 檢查是否為課堂教師
+        if (classroom.teacherId !== currentUser.uid) {
+          hideLoading();
+          alert('您不是此課堂的教師');
+          window.location.href = '/index.html';
+          return;
+        }
+
+        // 顯示課堂資訊
+        document.getElementById('classroomName').textContent = classroom.name;
+        document.getElementById('classroomCode').textContent = classroom.code;
+        document.getElementById('wordCount').textContent = classroom.wordCount;
+
+        hideLoading();
+
+        // 監聽學生變化
+        setupStudentsListener();
+
+      } catch (error) {
+        hideLoading();
+        console.error('Error loading classroom:', error);
+        showError('載入課堂資料失敗：' + error.message);
+      }
+    }
+
+    // 設置學生即時監聽
+    function setupStudentsListener() {
+      if (unsubscribeStudents) {
+        unsubscribeStudents();
+      }
+
+      onClassroomStudentsChanged(classroomId, (students) => {
+        updateLeaderboard(students);
+        updateStats(students);
+      });
+    }
+
+    // 更新排行榜
+    function updateLeaderboard(students) {
+      const container = document.getElementById('leaderboardContainer');
+      
+      if (students.length === 0) {
+        container.innerHTML = '<p class="text-center" style="color: #5f6368;">尚無學生加入課堂</p>';
+        return;
+      }
+
+      // 按照 totalTime 排序（已由 query 排序）
+      const leaderboardHTML = students.map((student, index) => {
+        const rank = index + 1;
+        const rankClass = `leaderboard-item rank-${rank}`;
+        const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : '';
+        
+        return `
+          <div class="${rank <= 3 ? rankClass : 'leaderboard-item'}" onclick="viewStudentDetail('${student.id}')">
+            <span class="rank">${rank}.</span>
+            <span class="student-name">${student.studentName}</span>
+            <span class="student-time">${formatTime(student.totalTime)}</span>
+            ${medal ? `<span class="medal">${medal}</span>` : ''}
+          </div>
+        `;
+      }).join('');
+
+      container.innerHTML = leaderboardHTML;
+    }
+
+    // 更新統計資訊
+    function updateStats(students) {
+      if (students.length === 0) {
+        document.getElementById('avgTime').textContent = '0 分';
+        document.getElementById('maxTime').textContent = '0 分';
+        document.getElementById('activeStudents').textContent = '0';
+        return;
+      }
+
+      // 計算平均學習時間
+      const totalTime = students.reduce((sum, s) => sum + s.totalTime, 0);
+      const avgTime = Math.floor(totalTime / students.length);
+      document.getElementById('avgTime').textContent = Math.floor(avgTime / 60) + ' 分';
+
+      // 最高學習時間
+      const maxTime = Math.max(...students.map(s => s.totalTime));
+      document.getElementById('maxTime').textContent = Math.floor(maxTime / 60) + ' 分';
+
+      // 活躍學生數（總學習時間 > 0）
+      const activeCount = students.filter(s => s.totalTime > 0).length;
+      document.getElementById('activeStudents').textContent = activeCount;
+    }
+
+    // 查看學生詳情
+    window.viewStudentDetail = function(studentId) {
+      window.location.href = `/student-detail.html?studentId=${studentId}`;
+    };
+
+    // 初始化
+    init();
+  </script>
+</body>
+</html>
