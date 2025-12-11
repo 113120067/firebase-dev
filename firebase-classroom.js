@@ -36,13 +36,17 @@ async function ensureDb() {
 
 /**
  * 生成唯一的 4 位課堂代碼
+ * 使用 crypto.getRandomValues() 提供更安全的隨機性
  * @returns {string} 4 位英數字代碼（大寫）
  */
 function generateClassroomCode() {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  const randomValues = new Uint8Array(4);
+  crypto.getRandomValues(randomValues);
+  
   let code = '';
   for (let i = 0; i < 4; i++) {
-    code += chars.charAt(Math.floor(Math.random() * chars.length));
+    code += chars.charAt(randomValues[i] % chars.length);
   }
   return code;
 }

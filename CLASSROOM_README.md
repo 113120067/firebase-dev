@@ -226,6 +226,10 @@ firebase deploy --only firestore:rules
 2. **即時更新**：教師控制台使用 Firestore onSnapshot，會即時反映學生學習狀況
 3. **響應式設計**：所有頁面支援手機、平板、桌面三種螢幕尺寸
 4. **錯誤處理**：所有 API 和 Firestore 操作都有完整的錯誤處理和使用者提示
+5. **安全性**：
+   - 課堂代碼使用 crypto.getRandomValues() 產生，提供加密安全的隨機性
+   - 檔案上傳限制大小（1MB）和類型（僅 .txt）
+   - 目前使用 multer 1.4.5-lts.1，未來應升級到 multer 2.x 以修補已知漏洞
 
 ## 未來改進方向
 
